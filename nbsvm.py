@@ -1,96 +1,105 @@
+"""
+    nbsvm.py
+    
+    python nbsvm.py --liblinear /PATH/liblinear-1.96 \
+        --ptrain /PATH/data/full-train-pos.txt \
+        --ntrain /PATH/data/full-train-neg.txt \
+        --ptest /PATH/data/test-pos.txt \
+        --ntest /PATH/data/test-neg.txt \
+        --ngram 123 \
+        --out TEST-SCORE    
+"""
+
 import os
-import pdb
+import sys
 import numpy as np
 import argparse
 from collections import Counter
 
 def tokenize(sentence, grams):
     words = sentence.split()
-    tokens = []
     for gram in grams:
         for i in range(len(words) - gram + 1):
-            tokens += ["_*_".join(words[i:i+gram])]
-    return tokens
+            yield "_*_".join(words[i:i+gram])
 
-def build_dict(f, grams):
-    dic = Counter()
-    for sentence in open(f).xreadlines():
-        dic.update(tokenize(sentence, grams))
-    return dic
 
-def process_files(file_pos, file_neg, dic, r, outfn, grams):
-    output = []
-    for beg_line, f in zip(["1", "-1"], [file_pos, file_neg]):
-        for l in open(f).xreadlines():
-            tokens = tokenize(l, grams)
-            indexes = []
-            for t in tokens:
-                try:
-                    indexes += [dic[t]]
-                except KeyError:
-                    pass
-            indexes = list(set(indexes))
-            indexes.sort()
-            line = [beg_line]
-            for i in indexes:
-                line += ["%i:%f" % (i + 1, r[i])]
-            output += [" ".join(line)]
-    output = "\n".join(output)
-    f = open(outfn, "w")
-    f.writelines(output)
-    f.close()
+def process_files(path, ulab, lookup, rat, outpath, grams):
+    outfile = open(outpath, 'w')
+    for i,line in enumerate(open(path).xreadlines()):
+        if not i % 10000:
+            print >> sys.stderr, 'processed %d lines' % i
+
+        lab, val = line.strip().split('\t')
+        
+        tokens = tokenize(val, grams)        
+        indices = [lookup[t] for t in tokens if lookup.get(t, False)]
+        indices = sorted(list(set(indices)))
+        
+        line = [ulab[lab]] + ["%i:%f" % (i + 1, rat[i]) for i in indices]
+        outfile.write(" ".join(line) + "\n")
+    
+    outfile.close()
+
 
 def compute_ratio(poscounts, negcounts, alpha=1):
-    alltokens = list(set(poscounts.keys() + negcounts.keys()))
-    dic = dict((t, i) for i, t in enumerate(alltokens))
-    d = len(dic)
-    print "computing r..."
-    p, q = np.ones(d) * alpha , np.ones(d) * alpha
-    for t in alltokens:
-        p[dic[t]] += poscounts[t]
-        q[dic[t]] += negcounts[t]
+    utokens = list(set(poscounts.keys() + negcounts.keys()))
+    lookup = dict(zip(utokens, range(len(utokens))))
+    
+    p = np.ones(len(utokens)) * alpha
+    q = np.ones(len(utokens)) * alpha
+    
+    for t in utokens:
+        p[lookup[t]] += poscounts[t]
+        q[lookup[t]] += negcounts[t]
+        
     p /= abs(p).sum()
     q /= abs(q).sum()
-    r = np.log(p/q)
-    return dic, r
- 
-def main(ptrain, ntrain, ptest, ntest, out, liblinear, ngram):
-    ngram = [int(i) for i in ngram]
-    print "counting..."
-    poscounts = build_dict(ptrain, ngram)         
-    negcounts = build_dict(ntrain, ngram)         
     
-    dic, r = compute_ratio(poscounts, negcounts)
-    print "processing files..."
-    process_files(ptrain, ntrain, dic, r, "train-nbsvm.txt", ngram)
-    process_files(ptest, ntest, dic, r, "test-nbsvm.txt", ngram)
-    
-    trainsvm = os.path.join(liblinear, "train") 
-    predictsvm = os.path.join(liblinear, "predict") 
-    os.system(trainsvm + " -s 0 train-nbsvm.txt model.logreg")
-    os.system(predictsvm + " -b 1 test-nbsvm.txt model.logreg " + out)
-    os.system("rm model.logreg train-nbsvm.txt test-nbsvm.txt")
-        
-if __name__ == "__main__":
-    """
-    Usage :
+    return lookup, np.log(p / q)
 
-    python nbsvm.py --liblinear /PATH/liblinear-1.96\
-        --ptrain /PATH/data/full-train-pos.txt\
-        --ntrain /PATH/data/full-train-neg.txt\
-        --ptest /PATH/data/test-pos.txt\
-        --ntest /PATH/data/test-neg.txt\
-         --ngram 123 --out TEST-SCORE
-    """
-
+   
+def parse_args():
     parser = argparse.ArgumentParser(description='Run NB-SVM on some text files.')
-    parser.add_argument('--liblinear', help='path of liblinear install e.g. */liblinear-1.96')
-    parser.add_argument('--ptrain', help='path of the text file TRAIN POSITIVE')
-    parser.add_argument('--ntrain', help='path of the text file TRAIN NEGATIVE')
-    parser.add_argument('--ptest', help='path of the text file TEST POSITIVE')
-    parser.add_argument('--ntest', help='path of the text file TEST NEGATIVE')
-    parser.add_argument('--out', help='path and fileename for score output')
-    parser.add_argument('--ngram', help='N-grams considered e.g. 123 is uni+bi+tri-grams')
-    args = vars(parser.parse_args())
+    parser.add_argument('--liblinear', help='path of liblinear install e.g. */liblinear-1.96', required=True)
+    parser.add_argument('--train', help='train data', required=True)
+    parser.add_argument('--test', help='test data', required=True)
+    parser.add_argument('--outpath', help='path and filename for score output', default='./nbsvm-model')
+    parser.add_argument('--ngram', help='N-grams considered e.g. 123 is uni+bi+tri-grams', default='123')
+    return parser.parse_args()
 
-    main(**args)
+
+if __name__ == "__main__":
+    args = parse_args()
+    
+    grams = map(int, args.ngram)
+    
+    print >> sys.stderr, '-- counting words --'
+    counters = {}
+    ulab = set([])
+    for i,line in enumerate(open(args.train).xreadlines()):
+        if not i % 10000:
+            print >> sys.stderr, 'processed %d lines' % i
+        
+        lab, val = line.split('\t')
+        
+        ulab.add(lab)
+        
+        if lab not in counters:
+            counters[lab] = Counter()
+        
+        for tok in tokenize(val, grams):
+            counters[lab][tok] += 1
+    
+    if len(ulab) > 2:
+        raise Exception('this implementation only supports binary classification!')
+    else:
+        ulab = dict(zip(ulab, ['-1', '+1']))
+    
+    print >> sys.stderr, '-- writing files --'
+    lookup, rat = compute_ratio(*counters.values())
+    process_files(args.train, ulab, lookup, rat, "./train-nbsvm.txt", grams)
+    process_files(args.test, ulab, lookup, rat, "./test-nbsvm.txt", grams)
+    
+    os.system("%s/train -s 0 ./train-nbsvm.txt %s" % (args.liblinear, args.outpath))
+    os.system("%s/predict -b 1 ./test-nbsvm.txt %s .nbsvm-tmp" % (args.liblinear, args.outpath))
+    os.system("rm .nbsvm-tmp ./train-nbsvm.txt ./test-nbsvm.txt")
