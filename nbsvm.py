@@ -27,8 +27,9 @@ def process_files(path, ulab, lookup, rat, outpath, grams):
     outfile = open(outpath, 'w')
     for i,line in enumerate(open(path).xreadlines()):
         if not i % 10000:
-            print >> sys.stderr, 'processed %d lines' % i
-
+            sys.stderr.write('\r\t Processed \t%s lines' % i)
+            sys.stderr.flush()
+        
         lab, val = line.strip().split('\t')
         
         tokens = tokenize(val, grams)        
@@ -73,12 +74,13 @@ if __name__ == "__main__":
     
     grams = map(int, args.ngram)
     
-    print >> sys.stderr, '-- counting words --'
+    print >> sys.stderr, 'counting words:'
     counters = {}
     ulab = set([])
     for i,line in enumerate(open(args.train).xreadlines()):
         if not i % 10000:
-            print >> sys.stderr, 'processed %d lines' % i
+            sys.stderr.write('\r\t Counted \t%s lines' % i)
+            sys.stderr.flush()
         
         lab, val = line.split('\t')
         
@@ -95,11 +97,11 @@ if __name__ == "__main__":
     else:
         ulab = dict(zip(ulab, ['-1', '+1']))
     
-    print >> sys.stderr, '-- writing files --'
+    print >> sys.stderr, '\n writing files:'
     lookup, rat = compute_ratio(*counters.values())
     process_files(args.train, ulab, lookup, rat, "./train-nbsvm.txt", grams)
     process_files(args.test, ulab, lookup, rat, "./test-nbsvm.txt", grams)
     
     os.system("%s/train -s 0 ./train-nbsvm.txt %s" % (args.liblinear, args.outpath))
     os.system("%s/predict -b 1 ./test-nbsvm.txt %s .nbsvm-tmp" % (args.liblinear, args.outpath))
-    os.system("rm .nbsvm-tmp ./train-nbsvm.txt ./test-nbsvm.txt")
+    # os.system("rm .nbsvm-tmp ./train-nbsvm.txt ./test-nbsvm.txt")
