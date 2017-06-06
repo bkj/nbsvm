@@ -6,8 +6,8 @@ from sklearn.linear_model import LogisticRegressionCV
 from sklearn.metrics import roc_auc_score
 from sklearn.feature_selection import SelectKBest, chi2
 
-train = pd.read_csv('./ft-train.txt', sep='\t', header=None)
-test = pd.read_csv('./ft-test.txt', sep='\t', header=None)
+train = pd.read_csv('../data/ft-train.txt', sep='\t', header=None)
+test = pd.read_csv('../data/ft-test.txt', sep='\t', header=None)
 
 X_train, y_train = train[1], train[0]
 X_test, y_test = test[1], test[0]

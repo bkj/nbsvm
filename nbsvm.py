@@ -15,6 +15,7 @@ import sys
 import numpy as np
 import argparse
 from collections import Counter
+import numba
 
 def tokenize(sentence, grams):
     words = sentence.split()
@@ -24,21 +25,24 @@ def tokenize(sentence, grams):
 
 
 def process_files(path, ulab, lookup, rat, outpath, grams):
+    print >> sys.stderr, 'creating %s' % outpath
+    
     outfile = open(outpath, 'w')
     for i,line in enumerate(open(path).xreadlines()):
         if not i % 10000:
-            sys.stderr.write('\r\t Processed \t%s lines' % i)
+            sys.stderr.write('\r\t Processed %s lines' % i)
             sys.stderr.flush()
         
         lab, val = line.strip().split('\t')
-        
-        tokens = tokenize(val, grams)        
+        tokens = tokenize(val, grams)       
+         
         indices = [lookup[t] for t in tokens if lookup.get(t, False)]
         indices = sorted(list(set(indices)))
         
         line = [ulab[lab]] + ["%i:%f" % (i + 1, rat[i]) for i in indices]
         outfile.write(" ".join(line) + "\n")
     
+    print
     outfile.close()
 
 
@@ -58,7 +62,7 @@ def compute_ratio(poscounts, negcounts, alpha=1):
     
     return lookup, np.log(p / q)
 
-   
+
 def parse_args():
     parser = argparse.ArgumentParser(description='Run NB-SVM on some text files.')
     parser.add_argument('--liblinear', help='path of liblinear install e.g. */liblinear-1.96', required=True)
